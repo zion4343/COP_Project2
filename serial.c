@@ -5,11 +5,25 @@
 #include <string.h>
 #include <zlib.h>
 #include <time.h>
+#include <pthread.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
+#define MAX_THREADS 20
 
 int cmp(const void *a, const void *b) {
 	return strcmp(*(char **) a, *(char **) b);
+}
+
+typedef struct{
+	// char ** images;
+	// int num_image;
+	// int thread_num;
+}myarg_t;
+
+void* mythread(void *arg){
+	myarg_t *args = (myarg_t *)arg;
+	//needs implementation?
+	return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -19,6 +33,10 @@ int main(int argc, char **argv) {
 	// end of time computation header
 
 	// do not modify the main function before this point!
+	pthread_t p;
+	myarg_t arg;
+	pthread_create(&p, NULL, mythread, &arg);
+	pthread_join(p, NULL);
 
 	assert(argc == 2);
 
