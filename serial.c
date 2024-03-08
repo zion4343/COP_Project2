@@ -10,20 +10,50 @@
 #define BUFFER_SIZE 1048576 // 1MB
 #define MAX_THREADS 20
 
-int cmp(const void *a, const void *b) {
-	return strcmp(*(char **) a, *(char **) b);
+/*
+Class
+*/
+//Zemaphores
+typedef struct __Zem_t{
+	int value;
+	pthread_cond_t cond;
+	pthread_mutex_t lock;
+}Zem_t;
+
+void Zem_init(Zem_t *s, int value){
+	s->value = value;
+	Cond_init(&s->cond);
+	Mutex_init(&s->lock);
 }
 
-typedef struct{
-	// char ** images;
-	// int num_image;
-	// int thread_num;
-}myarg_t;
+void Zem_wait(Zem_t *s){
+	Mute_lock(&s->lock);
+	while(s->value <= 0){Cond_wait(&s->cond, &s->lock);}
+	Cond_wait(&s->cond, &s->lock);
+	s->value--;
+	Mute_unlock(&s->lock);
+}
 
-void* mythread(void *arg){
-	myarg_t *args = (myarg_t *)arg;
-	//needs implementation?
-	return NULL;
+void Zem_post(Zem_t *s){
+	Mute_lock(&s->lock);
+	s->value++;
+	Mute_unlock(&s->lock);
+}
+
+typedef struct _rwlock_t{
+	
+}rwlock_t;
+
+void rwlock_aquire_readlock(rwlock_t *rw){
+	
+}
+
+/*
+Functions
+*/
+
+int cmp(const void *a, const void *b) {
+	return strcmp(*(char **) a, *(char **) b);
 }
 
 int main(int argc, char **argv) {
@@ -33,11 +63,6 @@ int main(int argc, char **argv) {
 	// end of time computation header
 
 	// do not modify the main function before this point!
-	pthread_t p;
-	myarg_t arg;
-	pthread_create(&p, NULL, mythread, &arg);
-	pthread_join(p, NULL);
-
 	assert(argc == 2);
 
 	DIR *d;
