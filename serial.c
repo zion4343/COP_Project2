@@ -40,12 +40,39 @@ void Zem_post(Zem_t *s){
 	Mute_unlock(&s->lock);
 }
 
+//Read-Write Lock using Zemaphore
 typedef struct _rwlock_t{
-	
+	Zem_t lock; //Basic Lock
+	Zem_t writelock; //Used to allow one writer or many readers
+	int readers; //count the readers in critical section
 }rwlock_t;
 
+void rwlock_init(rwlock_t *rw){
+	rw->readers = 0;
+	Zem_init(&rw->lock, 1);
+	Zem_init(&rw->writelock, 1);
+}
+
 void rwlock_aquire_readlock(rwlock_t *rw){
-	
+	Zem_wait(&rw->lock);
+	rw->readers++;
+	if(rw->readers == 1){Zem_wait(&rw->writelock);}
+	Zem_post(&rw->lock);
+}
+
+void rwlock_release_readlock(rwlock_t *rw){
+	Zem_wait(&rw->lock);
+	rw->readers--;
+	if(rw->readers == 0){Zem_post(&rw->writelock);}
+	Zem_post(&rw->lock);
+}
+
+void rwlock_acquire_writelock(rwlock_t *rw){
+	Zem_wait(&rw->writelock);
+}
+
+void rwlock_release_writelock(rwlock_t *rw){
+	Zem_post(&rw->writelock);
 }
 
 /*
