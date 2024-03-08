@@ -22,22 +22,25 @@ typedef struct __Zem_t{
 
 void Zem_init(Zem_t *s, int value){
 	s->value = value;
-	Cond_init(&s->cond);
-	Mutex_init(&s->lock);
+	int rc = pthread_cond_init(&s->cond, NULL);
+	assert (rc == 0);
+	rc = pthread_mutex_init(&s->lock, NULL);
+	assert (rc == 0);
 }
 
 void Zem_wait(Zem_t *s){
-	Mute_lock(&s->lock);
-	while(s->value <= 0){Cond_wait(&s->cond, &s->lock);}
-	Cond_wait(&s->cond, &s->lock);
+	pthread_mutex_lock(&s->lock);
+	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
+	pthread_cond_wait(&s->cond, &s->lock);
 	s->value--;
-	Mute_unlock(&s->lock);
+	pthread_mutex_unlock(&s->lock);
 }
 
 void Zem_post(Zem_t *s){
-	Mute_lock(&s->lock);
+	pthread_mutex_lock(&s->lock);
 	s->value++;
-	Mute_unlock(&s->lock);
+	pthread_cond_signal(&s->cond);
+	pthread_mutex_unlock(&s->lock);
 }
 
 //Read-Write Lock using Zemaphore
@@ -78,11 +81,52 @@ void rwlock_release_writelock(rwlock_t *rw){
 /*
 Functions
 */
-
 int cmp(const void *a, const void *b) {
 	return strcmp(*(char **) a, *(char **) b);
 }
 
+/*
+Shared Variables
+*/
+DIR *d;
+struct dirent *dir;
+char **files = NULL;
+int nfiles = 0;
+
+rwlock_t rw;
+int thread_count = 0;
+
+/*
+Threads
+*/
+void *thread_function(void *arg){
+	int *thread_arg = (int*) arg;
+	
+	pthread_exit(NULL);
+}
+
+void *thread_CreateSortedList_PPM(void *arg){
+	rwlock_aquire_readlock(&rw);
+	files = realloc(files, (nfiles+1)*sizeof(char *));
+	assert(files != NULL);
+
+	int len = strlen(dir->d_name);
+	rwlock_release_readlock(&rw);
+
+	rwlock_acquire_writelock(&rw);
+	if(dir->d_name[len-4] == '.' && dir->d_name[len-3] == 'p' && dir->d_name[len-2] == 'p' && dir->d_name[len-1] == 'm') {
+		files[nfiles] = strdup(dir->d_name);
+		assert(files[nfiles] != NULL);
+
+		nfiles++;
+	}
+	rwlock_release_writelock(&rw);
+	pthread_exit(NULL);
+}
+
+/*
+Main Function
+*/
 int main(int argc, char **argv) {
 	// time computation header
 	struct timespec start, end;
@@ -92,10 +136,10 @@ int main(int argc, char **argv) {
 	// do not modify the main function before this point!
 	assert(argc == 2);
 
-	DIR *d;
-	struct dirent *dir;
-	char **files = NULL;
-	int nfiles = 0;
+	//Initialize Read-Write Lock
+	rwlock_init(&rw);
+
+	int thread_count = 0; //The counter that store the number of the thread
 
 	d = opendir(argv[1]);
 	if(d == NULL) {
@@ -105,15 +149,12 @@ int main(int argc, char **argv) {
 
 	// create sorted list of PPM files
 	while ((dir = readdir(d)) != NULL) {
-		files = realloc(files, (nfiles+1)*sizeof(char *));
-		assert(files != NULL);
-
-		int len = strlen(dir->d_name);
-		if(dir->d_name[len-4] == '.' && dir->d_name[len-3] == 'p' && dir->d_name[len-2] == 'p' && dir->d_name[len-1] == 'm') {
-			files[nfiles] = strdup(dir->d_name);
-			assert(files[nfiles] != NULL);
-
-			nfiles++;
+		if(thread_count < MAX_THREADS){
+			pthread_t tid;
+			thread_count++;
+			if(pthread_create(&tid, NULL, thread_CreateSortedList_PPM, NULL)!=0){
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 	closedir(d);
