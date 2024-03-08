@@ -164,7 +164,21 @@ int main(int argc, char **argv) {
 	int total_in = 0, total_out = 0;
 	FILE *f_out = fopen("video.vzip", "w");
 	assert(f_out != NULL);
+
+///////////////////////////
+	pthread_t threads[MAX_THREADS];
+	int num_active_threads = 0;
+	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+
 	for(int i=0; i < nfiles; i++) {
+		pthread_mutex_lock(&mutex);
+		while (num_active_threads >= MAX_THREADS){
+			pthread_cond_wait(&cond, &mutex);
+		}
+		num_active_threads++;
+		pthread_mutex_unlock(&mutex);
+/////////////////////////
 		int len = strlen(argv[1])+strlen(files[i])+2;
 		char *full_path = malloc(len*sizeof(char));
 		assert(full_path != NULL);
