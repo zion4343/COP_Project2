@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
 		if(thread_count < MAX_THREADS){
 			pthread_t tid;
 			thread_count++;
-			if(pthread_create(&tid, NULL, thread_CreateSortedList_PPM, NULL)!=0){
+			if(pthread_create(&tid, NULL, thread_CreateSortedList_PPM, argv[1])!=0){
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -224,6 +224,11 @@ int main(int argc, char **argv) {
 	for(int i=0; i < nfiles; i++)
 		free(files[i]);
 	free(files);
+
+	//wait for threads to finish
+	for (int i = 0; i < thread_count; i++){
+		pthread_join(threads[i], NULL);
+	}
 
 	// do not modify the main function after this point!
 
