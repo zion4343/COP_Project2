@@ -31,7 +31,6 @@ void Zem_init(Zem_t *s, int value){
 void Zem_wait(Zem_t *s){
 	pthread_mutex_lock(&s->lock);
 	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
-	pthread_cond_wait(&s->cond, &s->lock);
 	s->value--;
 	pthread_mutex_unlock(&s->lock);
 }
@@ -105,24 +104,7 @@ void *thread_function(void *arg){
 	pthread_exit(NULL);
 }
 
-void *thread_CreateSortedList_PPM(void *arg){
-	rwlock_aquire_readlock(&rw);
-	files = realloc(files, (nfiles+1)*sizeof(char *));
-	assert(files != NULL);
 
-	int len = strlen(dir->d_name);
-	rwlock_release_readlock(&rw);
-
-	rwlock_acquire_writelock(&rw);
-	if(dir->d_name[len-4] == '.' && dir->d_name[len-3] == 'p' && dir->d_name[len-2] == 'p' && dir->d_name[len-1] == 'm') {
-		files[nfiles] = strdup(dir->d_name);
-		assert(files[nfiles] != NULL);
-
-		nfiles++;
-	}
-	rwlock_release_writelock(&rw);
-	pthread_exit(NULL);
-}
 
 /*
 Main Function
@@ -149,12 +131,15 @@ int main(int argc, char **argv) {
 
 	// create sorted list of PPM files
 	while ((dir = readdir(d)) != NULL) {
-		if(thread_count < MAX_THREADS){
-			pthread_t tid;
-			thread_count++;
-			if(pthread_create(&tid, NULL, thread_CreateSortedList_PPM, argv[1])!=0){
-				exit(EXIT_FAILURE);
-			}
+		files = realloc(files, (nfiles+1)*sizeof(char *));
+		assert(files != NULL);
+
+		int len = strlen(dir->d_name);
+		if(dir->d_name[len-4] == '.' && dir->d_name[len-3] == 'p' && dir->d_name[len-2] == 'p' && dir->d_name[len-1] == 'm') {
+			files[nfiles] = strdup(dir->d_name);
+			assert(files[nfiles] != NULL);
+
+			nfiles++;
 		}
 	}
 	closedir(d);
