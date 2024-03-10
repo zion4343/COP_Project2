@@ -5,110 +5,13 @@
 #include <string.h>
 #include <zlib.h>
 #include <time.h>
-#include <pthread.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
-#define MAX_THREADS 20
 
-/*
-Class
-*/
-//Zemaphores
-typedef struct __Zem_t{
-	int value;
-	pthread_cond_t cond;
-	pthread_mutex_t lock;
-}Zem_t;
-
-void Zem_init(Zem_t *s, int value){
-	s->value = value;
-	int rc = pthread_cond_init(&s->cond, NULL);
-	assert (rc == 0);
-	rc = pthread_mutex_init(&s->lock, NULL);
-	assert (rc == 0);
-}
-
-void Zem_wait(Zem_t *s){
-	pthread_mutex_lock(&s->lock);
-	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
-	s->value--;
-	pthread_mutex_unlock(&s->lock);
-}
-
-void Zem_post(Zem_t *s){
-	pthread_mutex_lock(&s->lock);
-	s->value++;
-	pthread_cond_signal(&s->cond);
-	pthread_mutex_unlock(&s->lock);
-}
-
-//Read-Write Lock using Zemaphore
-typedef struct _rwlock_t{
-	Zem_t lock; //Basic Lock
-	Zem_t writelock; //Used to allow one writer or many readers
-	int readers; //count the readers in critical section
-}rwlock_t;
-
-void rwlock_init(rwlock_t *rw){
-	rw->readers = 0;
-	Zem_init(&rw->lock, 1);
-	Zem_init(&rw->writelock, 1);
-}
-
-void rwlock_aquire_readlock(rwlock_t *rw){
-	Zem_wait(&rw->lock);
-	rw->readers++;
-	if(rw->readers == 1){Zem_wait(&rw->writelock);}
-	Zem_post(&rw->lock);
-}
-
-void rwlock_release_readlock(rwlock_t *rw){
-	Zem_wait(&rw->lock);
-	rw->readers--;
-	if(rw->readers == 0){Zem_post(&rw->writelock);}
-	Zem_post(&rw->lock);
-}
-
-void rwlock_acquire_writelock(rwlock_t *rw){
-	Zem_wait(&rw->writelock);
-}
-
-void rwlock_release_writelock(rwlock_t *rw){
-	Zem_post(&rw->writelock);
-}
-
-/*
-Functions
-*/
 int cmp(const void *a, const void *b) {
 	return strcmp(*(char **) a, *(char **) b);
 }
 
-/*
-Shared Variables
-*/
-DIR *d;
-struct dirent *dir;
-char **files = NULL;
-int nfiles = 0;
-
-rwlock_t rw;
-int thread_count = 0;
-
-/*
-Threads
-*/
-void *thread_function(void *arg){
-	int *thread_arg = (int*) arg;
-	
-	pthread_exit(NULL);
-}
-
-
-
-/*
-Main Function
-*/
 int main(int argc, char **argv) {
 	// time computation header
 	struct timespec start, end;
@@ -116,12 +19,13 @@ int main(int argc, char **argv) {
 	// end of time computation header
 
 	// do not modify the main function before this point!
+
 	assert(argc == 2);
 
-	//Initialize Read-Write Lock
-	rwlock_init(&rw);
-
-	int thread_count = 0; //The counter that store the number of the thread
+	DIR *d;
+	struct dirent *dir;
+	char **files = NULL;
+	int nfiles = 0;
 
 	d = opendir(argv[1]);
 	if(d == NULL) {
@@ -149,21 +53,7 @@ int main(int argc, char **argv) {
 	int total_in = 0, total_out = 0;
 	FILE *f_out = fopen("video.vzip", "w");
 	assert(f_out != NULL);
-
-///////////////////////////
-	pthread_t threads[MAX_THREADS];
-	int num_active_threads = 0;
-	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-
 	for(int i=0; i < nfiles; i++) {
-		pthread_mutex_lock(&mutex);
-		while (num_active_threads >= MAX_THREADS){
-			pthread_cond_wait(&cond, &mutex);
-		}
-		num_active_threads++;
-		pthread_mutex_unlock(&mutex);
-/////////////////////////
 		int len = strlen(argv[1])+strlen(files[i])+2;
 		char *full_path = malloc(len*sizeof(char));
 		assert(full_path != NULL);
@@ -209,11 +99,6 @@ int main(int argc, char **argv) {
 	for(int i=0; i < nfiles; i++)
 		free(files[i]);
 	free(files);
-
-	//wait for threads to finish
-	for (int i = 0; i < thread_count; i++){
-		pthread_join(threads[i], NULL);
-	}
 
 	// do not modify the main function after this point!
 
