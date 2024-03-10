@@ -5,11 +5,134 @@
 #include <string.h>
 #include <zlib.h>
 #include <time.h>
+#include <pthread.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
+#define MAX_THREAD 20
 
 int cmp(const void *a, const void *b) {
 	return strcmp(*(char **) a, *(char **) b);
+}
+
+//concurrent queue is used to enqueue and dequeue filenames, and the concurrent hashmap is used to track processed files
+//each thread processes file from the queue
+//checks if the file has been processed using the hashmap
+
+//node strycture for the concurrent queue
+typedef struct __node_t{
+	int value;
+	struct __node_t *next;
+}node_t;
+
+//concurrent queue structure
+typedef struct __queue_t{
+	node_t *head;
+	node_t *tail;
+	pthread_mutex_t head_lock, tail_lock;
+}queue_t;
+
+//initialize the concurrent queue
+void Queue_Init(queue_t *q){
+	node_t *tmp = malloc(sizeof(node_t));
+	tmp->next = NULL;
+	q->head = q->tail = tmp;
+	pthread_mutex_init(&q->head_lock, NULL);
+	pthread_mutex_init(&q->tail_lock, NULL);
+}
+
+void Queue_Enqueue(queue_t *q, int value){
+	node_t *tmp = malloc(sizeof(node_t));
+	assert(tmp != NULL);
+	tmp->value = value;
+	tmp->next = NULL;
+
+	pthread_mutex_lock(&q->tail_lock);
+	q->tail->next = tmp;
+	q->tail = tmp;
+	pthread_mutex_unlock(&q->tail_lock);
+}
+
+void Queue_Dequeue(queue_t *q, int *value){
+	pthread_mutex_lock(&q->head_lock);
+	node_t *tmp = q->head;
+	node_t *new_head = tmp->next;
+	if (new_head == NULL){
+		pthread_mutex_unlock(&q->head_lock);
+		return;  //queue was empty
+	}
+	*value = new_head->value;
+	q->head = new_head;
+	pthread_mutex_unlock(&q->head_lock);
+	free(tmp);
+}
+
+//list structure for the hash table
+typedef struct __list_t{
+	int key;
+	struct __list_t *next;
+	pthread_mutex_t lock;
+}list_t;
+
+//hash table structure
+typedef struct{
+	list_t lists[MAX_THREAD];
+}hash_t;
+
+//initialize hash table
+void Hash_Init(hash_t *H){
+	int i;
+	for (i = 0; i < MAX_THREAD; i++){
+		H->lists[i].next = NULL;
+		pthread_mutex_init(&H->lists[i].lock, NULL);
+	}
+}
+
+int Hash_Insert(hash_t *H, int key){
+	list_t *new = malloc(sizeof(list_t));
+	if (new == NULL){
+		perror("malloc");
+		return -1;
+	}
+	new->key = key;
+	new->next = NULL;
+	//lock critical section
+	pthread_mutex_lock(&H->lists[key%MAX_THREAD].lock);
+	new->next = H->lists[key%MAX_THREAD].next;
+	H->lists[key%MAX_THREAD].next = new;
+	pthread_mutex_unlock(&H->lists[key%MAX_THREAD].lock);
+	return 0;	//success
+}
+
+int Hash_Lookup(hash_t *H, int key){
+	pthread_mutex_lock(&H->lists[key % MAX_THREAD].lock);
+	list_t *curr = H->lists[key % MAX_THREAD].next;
+	while (curr != NULL){
+		if (curr->key == key){
+			pthread_mutex_unlock(&H->lists[key%MAX_THREAD].lock);
+			return 0;
+		}
+		curr = curr->next;
+	}
+	pthread_mutex_unlock(&H->lists[key % MAX_THREAD].lock);
+	return -1;	//not found  
+}
+
+void* process_files (void* arg){
+	queue_t* queue = (queue_t*)arg;
+	hash_t* hashMap = (hash_t*)arg;
+
+	while (1){
+		int tmp;
+		Queue_Dequeue(queue, &tmp);
+		if (tmp == -1){
+			break;
+		}
+
+		pthread_mutex_lock(&hashMap->lists[tmp % MAX_THREAD].lock);
+		Hash_Insert(hashMap, tmp);
+		pthread_mutex_unlock(&hashMap->lists[tmp % MAX_THREAD].lock);
+	}
+	return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -31,6 +154,27 @@ int main(int argc, char **argv) {
 	if(d == NULL) {
 		printf("An error has occurred\n");
 		return 0;
+	}
+
+	queue_t queue;
+	Queue_Init(&queue);
+
+	hash_t hashMap;
+	Hash_Init(&hashMap);
+
+	for (int i = 0; i < MAX_THREAD; i++){
+		Queue_Enqueue(&queue, i);
+	}
+
+	//create threads
+	pthread_t threads[MAX_THREAD];
+	for (int i = 0; i < MAX_THREAD; i++){
+		pthread_create(&threads[i], NULL, process_files, &queue);
+	}
+
+	//wait for threads to finish
+	for (int i = 0; i < MAX_THREAD; i++){
+		pthread_join(threads[i], NULL);
 	}
 
 	// create sorted list of PPM files
