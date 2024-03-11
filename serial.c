@@ -156,8 +156,10 @@ void *thread_createSingleZippedPackage(void *arg){
 	strcat(full_path, "/");
 	strcat(full_path, files[i]);
 
-	unsigned char buffer_in[BUFFER_SIZE];
-	unsigned char buffer_out[BUFFER_SIZE];
+	rwlock_acquire_writelock(&rw_malloc);
+	unsigned char *buffer_in = malloc(BUFFER_SIZE * sizeof(unsigned char));
+	unsigned char *buffer_out = malloc(BUFFER_SIZE * sizeof(unsigned char));
+	rwlock_release_writelock(&rw_malloc);
 
 	// load file
 	FILE *f_in = fopen(full_path, "r");
@@ -253,7 +255,7 @@ int main(int argc, char **argv) {
 	//rw_lock
 	rwlock_init(&rw_total_in); //for total_in
 	rwlock_init(&rw_total_out); //for total_out
-	rwlock_init(&rw_malloc); //for malloc()
+	rwlock_init(&rw_malloc); //for memory access (for free() and malloc())
 	rwlock_init(&rw_fOut); //for f_out
 
 	int thread_priority = 0;
