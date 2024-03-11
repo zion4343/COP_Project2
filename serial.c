@@ -183,7 +183,9 @@ void *thread_createSingleZippedPackage(void *arg){
 	total_out += nbytes_zipped;
 	rwlock_release_writelock(&rw_total_out);
 
+	rwlock_acquire_writelock(&rw_malloc);
 	free(full_path);
+	rwlock_release_writelock(&rw_malloc);
 
 	//Reduce the active_thread number and signal for the cond
 	pthread_mutex_lock(&mutex);
@@ -252,9 +254,10 @@ int main(int argc, char **argv) {
 			pthread_cond_wait(&cond, &mutex);
 		}
 		//if num_active_threads is lower than 20, create thread
-		if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, &args) != 0){
+		if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
 			exit(EXIT_FAILURE);
 		};
+
 		num_active_threads++;
 		pthread_mutex_unlock(&mutex);
 	}
