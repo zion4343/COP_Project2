@@ -260,7 +260,7 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_fOut); //for f_out
 
 
-	for(int i=0; i < 2; i++) {
+	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
 		arg_struct args;
 		args.i = i;
