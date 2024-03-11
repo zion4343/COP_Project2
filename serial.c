@@ -150,7 +150,6 @@ int main(int argc, char **argv) {
 	FILE *f_out = fopen("video.vzip", "w");
 	assert(f_out != NULL);
 
-///////////////////////////
 	pthread_t threads[MAX_THREADS];
 	int num_active_threads = 0;
 	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -158,14 +157,25 @@ int main(int argc, char **argv) {
 
 	for(int i=0; i < nfiles; i++) {
 		pthread_mutex_lock(&mutex);
+		//cannot run more than 20 threads at the same time
 		while (num_active_threads >= MAX_THREADS){
 			pthread_cond_wait(&cond, &mutex);
 		}
+		pthread_mutex_unlock(&mutex);
+
+		//need to create thread to process a file
+		//pthread_create()
+
+		pthread_mutex_lock(&mutex);
 		num_active_threads++;
 		pthread_mutex_unlock(&mutex);
-/////////////////////////
+
 		int len = strlen(argv[1])+strlen(files[i])+2;
 		char *full_path = malloc(len*sizeof(char));
+		// if (full_path == NULL){
+		// 	fprintf(stderr, "Memory allocation failed\n");
+		// 	exit(1);
+		// }
 		assert(full_path != NULL);
 		strcpy(full_path, argv[1]);
 		strcat(full_path, "/");
@@ -176,6 +186,10 @@ int main(int argc, char **argv) {
 
 		// load file
 		FILE *f_in = fopen(full_path, "r");
+		// if (f_in == NULL){
+		// 	fprintf(stderr, "Failed to open file");
+		// 	continue;
+		// }
 		assert(f_in != NULL);
 		int nbytes = fread(buffer_in, sizeof(unsigned char), BUFFER_SIZE, f_in);
 		fclose(f_in);
