@@ -82,6 +82,7 @@ typedef struct __arg_struct{
 	char** argv;
 	char** files;
 	FILE* f_out;
+	int priority;
 } arg_struct;
 
 /*
@@ -101,6 +102,7 @@ int nfiles = 0;
 
 pthread_t threads[MAX_THREADS];
 int num_active_threads = 0;
+int finished_priority = 0;
 
 /*
 Locks
@@ -108,6 +110,9 @@ Locks
 //Lock and Cond for num_active_threads
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+//Lock and Cond for priority
+pthread_mutex_t mutex_p = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_p = PTHREAD_COND_INITIALIZER;
 //rwlock for total_in and total_out
 int total_in = 0, total_out = 0;
 rwlock_t rw_total_in;
@@ -133,12 +138,17 @@ void *thread_createSingleZippedPackage(void *arg){
 	char** argv = args->argv;
 	char** files = args->files;
 	FILE *f_out = args->f_out;
+	int priority = args->priority;
 
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
 	//allocate heap for memory
 	rwlock_acquire_writelock(&rw_malloc);
 	char *full_path = malloc(len*sizeof(char));
+	if (full_path == NULL) {
+		perror("Memory allocation failed for full_path");
+		exit(EXIT_FAILURE);
+	}
 	rwlock_release_writelock(&rw_malloc);
 	
 	assert(full_path != NULL);
@@ -174,10 +184,15 @@ void *thread_createSingleZippedPackage(void *arg){
 	// dump zipped file
 	int nbytes_zipped = BUFFER_SIZE-strm.avail_out;
 
+	//Execute fwrite() based on priority
+	pthread_mutex_lock(&mutex_p);
 	rwlock_acquire_writelock(&rw_fOut);
+	while(priority > finished_priority){pthread_cond_wait(&cond_p, &mutex_p);}
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
+	finished_priority = priority;
 	rwlock_release_writelock(&rw_fOut);
+	pthread_mutex_unlock(&mutex_p);
 
 	rwlock_acquire_writelock(&rw_total_out);
 	total_out += nbytes_zipped;
@@ -241,12 +256,17 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_malloc); //for malloc()
 	rwlock_init(&rw_fOut); //for f_out
 
+	int thread_priority = 0;
+
 	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
 		arg_struct args;
 		args.i = i;
 		args.argv = argv;
 		args.files = files;
+		args.f_out = f_out;
+		args.priority = thread_priority;
+		thread_priority++;
 
 		//cannot run more than 20 threads at the same time
 		pthread_mutex_lock(&mutex);
