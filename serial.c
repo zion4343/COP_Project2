@@ -43,7 +43,7 @@ void Zem_post(Zem_t *s){
 }
 
 //Read-Write Lock using Zemaphore
-typedef struct _rwlock_t{
+typedef struct __rwlock_t{
 	Zem_t lock; //Basic Lock
 	Zem_t writelock; //Used to allow one writer or many readers
 	int readers; //count the readers in critical section
@@ -77,6 +77,13 @@ void rwlock_release_writelock(rwlock_t *rw){
 	Zem_post(&rw->writelock);
 }
 
+typedef struct __arg_struct{
+	int i;
+	char** argv;
+	char** files;
+	FILE* f_out;
+} arg_struct;
+
 /*
 Functions
 */
@@ -92,8 +99,23 @@ struct dirent *dir;
 char **files = NULL;
 int nfiles = 0;
 
-rwlock_t rw;
-int thread_count = 0;
+pthread_t threads[MAX_THREADS];
+int num_active_threads = 0;
+
+/*
+Locks
+*/
+//Lock and Cond for num_active_threads
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+//rwlock for total_in and total_out
+int total_in = 0, total_out = 0;
+rwlock_t rw_total_in;
+rwlock_t rw_total_out;
+//lock for malloc()
+rwlock_t rw_malloc;
+//lock for f_out()
+rwlock_t rw_fOut;
 
 /*
 Threads
@@ -104,7 +126,73 @@ void *thread_function(void *arg){
 	pthread_exit(NULL);
 }
 
+void *thread_createSingleZippedPackage(void *arg){
+	//function arguments
+	arg_struct* args = (arg_struct*) arg;
+	int i = args->i;
+	char** argv = args->argv;
+	char** files = args->files;
+	FILE *f_out = args->f_out;
 
+	int len = strlen(argv[1])+strlen(files[i])+2;
+
+	//allocate heap for memory
+	rwlock_acquire_writelock(&rw_malloc);
+	char *full_path = malloc(len*sizeof(char));
+	rwlock_release_writelock(&rw_malloc);
+	
+	assert(full_path != NULL);
+	strcpy(full_path, argv[1]);
+	strcat(full_path, "/");
+	strcat(full_path, files[i]);
+
+	unsigned char buffer_in[BUFFER_SIZE];
+	unsigned char buffer_out[BUFFER_SIZE];
+
+	// load file
+	FILE *f_in = fopen(full_path, "r");
+	assert(f_in != NULL);
+	int nbytes = fread(buffer_in, sizeof(unsigned char), BUFFER_SIZE, f_in);
+	fclose(f_in);
+
+	rwlock_acquire_writelock(&rw_total_in);
+	total_in += nbytes;
+	rwlock_release_writelock(&rw_total_in);
+
+	// zip file
+	z_stream strm;
+	int ret = deflateInit(&strm, 9);
+	assert(ret == Z_OK);
+	strm.avail_in = nbytes;
+	strm.next_in = buffer_in;
+	strm.avail_out = BUFFER_SIZE;
+	strm.next_out = buffer_out;
+
+	ret = deflate(&strm, Z_FINISH);
+	assert(ret == Z_STREAM_END);
+
+	// dump zipped file
+	int nbytes_zipped = BUFFER_SIZE-strm.avail_out;
+
+	rwlock_acquire_writelock(&rw_fOut);
+	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
+	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
+	rwlock_release_writelock(&rw_fOut);
+
+	rwlock_acquire_writelock(&rw_total_out);
+	total_out += nbytes_zipped;
+	rwlock_release_writelock(&rw_total_out);
+
+	free(full_path);
+
+	//Reduce the active_thread number and signal for the cond
+	pthread_mutex_lock(&mutex);
+	num_active_threads--;
+	pthread_mutex_unlock(&mutex);
+	pthread_cond_signal(&cond);
+
+	pthread_exit(NULL);
+}
 
 /*
 Main Function
@@ -118,10 +206,6 @@ int main(int argc, char **argv) {
 	// do not modify the main function before this point!
 	assert(argc == 2);
 
-	//Initialize Read-Write Lock
-	rwlock_init(&rw);
-
-	int thread_count = 0; //The counter that store the number of the thread
 
 	d = opendir(argv[1]);
 	if(d == NULL) {
@@ -146,76 +230,40 @@ int main(int argc, char **argv) {
 	qsort(files, nfiles, sizeof(char *), cmp);
 
 	// create a single zipped package with all PPM files in lexicographical order
-	int total_in = 0, total_out = 0;
 	FILE *f_out = fopen("video.vzip", "w");
 	assert(f_out != NULL);
 
-	pthread_t threads[MAX_THREADS];
-	int num_active_threads = 0;
-	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+	//rw_lock
+	rwlock_init(&rw_total_in); //for total_in
+	rwlock_init(&rw_total_out); //for total_out
+	rwlock_init(&rw_malloc); //for malloc()
+	rwlock_init(&rw_fOut); //for f_out
 
 	for(int i=0; i < nfiles; i++) {
-		pthread_mutex_lock(&mutex);
+		//Arguments for thread functions
+		arg_struct args;
+		args.i = i;
+		args.argv = argv;
+		args.files = files;
+
 		//cannot run more than 20 threads at the same time
+		pthread_mutex_lock(&mutex);
 		while (num_active_threads >= MAX_THREADS){
 			pthread_cond_wait(&cond, &mutex);
 		}
-		pthread_mutex_unlock(&mutex);
-
-		//need to create thread to process a file
-		//pthread_create()
-
-		pthread_mutex_lock(&mutex);
+		//if num_active_threads is lower than 20, create thread
+		if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, &args) != 0){
+			exit(EXIT_FAILURE);
+		};
 		num_active_threads++;
 		pthread_mutex_unlock(&mutex);
-
-		int len = strlen(argv[1])+strlen(files[i])+2;
-		char *full_path = malloc(len*sizeof(char));
-		// if (full_path == NULL){
-		// 	fprintf(stderr, "Memory allocation failed\n");
-		// 	exit(1);
-		// }
-		assert(full_path != NULL);
-		strcpy(full_path, argv[1]);
-		strcat(full_path, "/");
-		strcat(full_path, files[i]);
-
-		unsigned char buffer_in[BUFFER_SIZE];
-		unsigned char buffer_out[BUFFER_SIZE];
-
-		// load file
-		FILE *f_in = fopen(full_path, "r");
-		// if (f_in == NULL){
-		// 	fprintf(stderr, "Failed to open file");
-		// 	continue;
-		// }
-		assert(f_in != NULL);
-		int nbytes = fread(buffer_in, sizeof(unsigned char), BUFFER_SIZE, f_in);
-		fclose(f_in);
-		total_in += nbytes;
-
-		// zip file
-		z_stream strm;
-		int ret = deflateInit(&strm, 9);
-		assert(ret == Z_OK);
-		strm.avail_in = nbytes;
-		strm.next_in = buffer_in;
-		strm.avail_out = BUFFER_SIZE;
-		strm.next_out = buffer_out;
-
-		ret = deflate(&strm, Z_FINISH);
-		assert(ret == Z_STREAM_END);
-
-		// dump zipped file
-		int nbytes_zipped = BUFFER_SIZE-strm.avail_out;
-		fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
-		fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
-		total_out += nbytes_zipped;
-
-		free(full_path);
 	}
 	fclose(f_out);
+
+	//wait for threads to finish
+	for (int i = 0; i < num_active_threads; i++){
+		pthread_join(threads[i], NULL);
+	}
 
 	printf("Compression rate: %.2lf%%\n", 100.0*(total_in-total_out)/total_in);
 
@@ -224,10 +272,6 @@ int main(int argc, char **argv) {
 		free(files[i]);
 	free(files);
 
-	//wait for threads to finish
-	for (int i = 0; i < thread_count; i++){
-		pthread_join(threads[i], NULL);
-	}
 
 	// do not modify the main function after this point!
 
