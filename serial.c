@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
-#define MAX_THREADS 20
+#define MAX_THREADS 19 //The maximum number of child thread
 
 /*
 Class
@@ -102,7 +102,7 @@ int nfiles = 0;
 
 pthread_t threads[MAX_THREADS];
 int num_active_threads = 0;
-int finished_priority = 0;
+int next_priority = 0;
 
 /*
 Locks
@@ -145,10 +145,6 @@ void *thread_createSingleZippedPackage(void *arg){
 	//allocate heap for memory
 	rwlock_acquire_writelock(&rw_malloc);
 	char *full_path = malloc(len*sizeof(char));
-	if (full_path == NULL) {
-		perror("Memory allocation failed for full_path");
-		exit(EXIT_FAILURE);
-	}
 	rwlock_release_writelock(&rw_malloc);
 	
 	assert(full_path != NULL);
@@ -188,12 +184,13 @@ void *thread_createSingleZippedPackage(void *arg){
 
 	//Execute fwrite() based on priority
 	pthread_mutex_lock(&mutex_p);
+	while(priority != next_priority){pthread_cond_wait(&cond_p, &mutex_p);}
 	rwlock_acquire_writelock(&rw_fOut);
-	while(priority > finished_priority){pthread_cond_wait(&cond_p, &mutex_p);}
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
-	finished_priority = priority;
 	rwlock_release_writelock(&rw_fOut);
+	next_priority++;
+	pthread_cond_broadcast(&cond_p);
 	pthread_mutex_unlock(&mutex_p);
 
 	rwlock_acquire_writelock(&rw_total_out);
@@ -258,7 +255,6 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_malloc); //for memory access (for free() and malloc())
 	rwlock_init(&rw_fOut); //for f_out
 
-	int thread_priority = 0;
 
 	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
@@ -267,8 +263,7 @@ int main(int argc, char **argv) {
 		args.argv = argv;
 		args.files = files;
 		args.f_out = f_out;
-		args.priority = thread_priority;
-		thread_priority++;
+		args.priority = i;
 
 		//cannot run more than 20 threads at the same time
 		pthread_mutex_lock(&mutex);
