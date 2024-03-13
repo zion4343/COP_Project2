@@ -184,11 +184,11 @@ void *thread_createSingleZippedPackage(void *arg){
 
 	//Execute fwrite() based on priority
 	pthread_mutex_lock(&mutex_p);
-	/*
+	
 	while(priority != next_priority){
 		pthread_cond_wait(&cond_p, &mutex_p); 
 	}
-	*/
+	
 	rwlock_acquire_writelock(&rw_fOut);
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
