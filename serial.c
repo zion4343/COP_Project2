@@ -119,8 +119,8 @@ rwlock_t rw_total_in;
 rwlock_t rw_total_out;
 //lock for malloc()
 rwlock_t rw_malloc;
-//lock for f_out()
-rwlock_t rw_fOut;
+//lock for file
+rwlock_t rw_file;
 //lock for args
 rwlock_t rw_args;
 
@@ -156,10 +156,12 @@ void *thread_createSingleZippedPackage(void* arg){
 	rwlock_release_writelock(&rw_malloc);
 
 	// load file
+	rwlock_acquire_readlock(&rw_file);
 	FILE *f_in = fopen(full_path, "r");
 	assert(f_in != NULL);
 	int nbytes = fread(buffer_in, sizeof(unsigned char), BUFFER_SIZE, f_in);
 	fclose(f_in);
+	rwlock_release_readlock(&rw_file);
 
 	rwlock_acquire_writelock(&rw_total_in);
 	total_in += nbytes;
@@ -185,11 +187,10 @@ void *thread_createSingleZippedPackage(void* arg){
 	while(priority != next_priority){
 		pthread_cond_wait(&cond_p, &mutex_p); 
 	}
-
-	rwlock_acquire_writelock(&rw_fOut);
+	rwlock_acquire_writelock(&rw_file);
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
-	rwlock_release_writelock(&rw_fOut);
+	rwlock_release_writelock(&rw_file);
 	next_priority++;
 	pthread_cond_broadcast(&cond_p);
 	pthread_mutex_unlock(&mutex_p);
@@ -208,7 +209,6 @@ void *thread_createSingleZippedPackage(void* arg){
 	pthread_mutex_unlock(&mutex);
 	pthread_cond_signal(&cond);
 
-	pthread_cond_signal(&cond_p);
 	pthread_exit(NULL);
 }
 
@@ -255,7 +255,7 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_total_in); //for total_in
 	rwlock_init(&rw_total_out); //for total_out
 	rwlock_init(&rw_malloc); //for memory access (for free() and malloc())
-	rwlock_init(&rw_fOut); //for f_out
+	rwlock_init(&rw_file); //for f_out
 	rwlock_init(&rw_args); //for args
 
 
