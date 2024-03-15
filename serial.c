@@ -55,7 +55,7 @@ void rwlock_init(rwlock_t *rw){
 	Zem_init(&rw->writelock, 1);
 }
 
-void rwlock_aquire_readlock(rwlock_t *rw){
+void rwlock_acquire_readlock(rwlock_t *rw){
 	Zem_wait(&rw->lock);
 	rw->readers++;
 	if(rw->readers == 1){Zem_wait(&rw->writelock);}
@@ -121,17 +121,14 @@ rwlock_t rw_total_out;
 rwlock_t rw_malloc;
 //lock for f_out()
 rwlock_t rw_fOut;
+//lock for args
+rwlock_t rw_args;
 
 /*
 Threads
 */
-void *thread_function(void *arg){
-	int *thread_arg = (int*) arg;
-	
-	pthread_exit(NULL);
-}
 
-void *thread_createSingleZippedPackage(void *arg){
+void *thread_createSingleZippedPackage(void* arg){
 	//function arguments
 	arg_struct* args = (arg_struct*) arg;
 	int i = args->i;
@@ -139,6 +136,7 @@ void *thread_createSingleZippedPackage(void *arg){
 	char** files = args->files;
 	FILE *f_out = args->f_out;
 	int priority = args->priority;
+	rwlock_release_readlock(&rw_args);
 
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
@@ -184,7 +182,6 @@ void *thread_createSingleZippedPackage(void *arg){
 
 	//Execute fwrite() based on priority
 	pthread_mutex_lock(&mutex_p);
-	
 	while(priority != next_priority){
 		pthread_cond_wait(&cond_p, &mutex_p); 
 	}
@@ -194,7 +191,7 @@ void *thread_createSingleZippedPackage(void *arg){
 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
 	rwlock_release_writelock(&rw_fOut);
 	next_priority++;
-	pthread_cond_broadcast(&cond_p);
+	pthread_cond_signal(&cond_p);
 	pthread_mutex_unlock(&mutex_p);
 
 	rwlock_acquire_writelock(&rw_total_out);
@@ -211,6 +208,7 @@ void *thread_createSingleZippedPackage(void *arg){
 	pthread_mutex_unlock(&mutex);
 	pthread_cond_signal(&cond);
 
+	pthread_cond_signal(&cond_p);
 	pthread_exit(NULL);
 }
 
@@ -258,16 +256,19 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_total_out); //for total_out
 	rwlock_init(&rw_malloc); //for memory access (for free() and malloc())
 	rwlock_init(&rw_fOut); //for f_out
+	rwlock_init(&rw_args); //for args
 
 
-	for(int i=0; i < nfiles; i++) {
+	for(int i=0; i < 3; i++) {
 		//Arguments for thread functions
+		rwlock_acquire_writelock(&rw_args);
 		arg_struct args;
 		args.i = i;
 		args.argv = argv;
 		args.files = files;
 		args.f_out = f_out;
 		args.priority = i;
+		rwlock_release_writelock(&rw_args);
 
 		//cannot run more than 20 threads at the same time
 		pthread_mutex_lock(&mutex);
@@ -275,6 +276,7 @@ int main(int argc, char **argv) {
 			pthread_cond_wait(&cond, &mutex);
 		}
 		//if num_active_threads is lower than 20, create thread
+		rwlock_acquire_readlock(&rw_args); //the lock to prevent to change the value in args before read it in the thread.
 		if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
 			exit(EXIT_FAILURE);
 		};
