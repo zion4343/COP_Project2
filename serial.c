@@ -185,13 +185,13 @@ void *thread_createSingleZippedPackage(void* arg){
 	while(priority != next_priority){
 		pthread_cond_wait(&cond_p, &mutex_p); 
 	}
-	
+
 	rwlock_acquire_writelock(&rw_fOut);
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
 	rwlock_release_writelock(&rw_fOut);
 	next_priority++;
-	pthread_cond_signal(&cond_p);
+	pthread_cond_broadcast(&cond_p);
 	pthread_mutex_unlock(&mutex_p);
 
 	rwlock_acquire_writelock(&rw_total_out);
@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_args); //for args
 
 
-	for(int i=0; i < 3; i++) {
+	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
 		rwlock_acquire_writelock(&rw_args);
 		arg_struct args;
