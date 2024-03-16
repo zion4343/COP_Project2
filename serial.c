@@ -261,28 +261,51 @@ int main(int argc, char **argv) {
 
 	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
-		rwlock_acquire_writelock(&rw_args);
+		//rwlock_acquire_writelock(&rw_args);
 		arg_struct args;
 		args.i = i;
 		args.argv = argv;
 		args.files = files;
 		args.f_out = f_out;
 		args.priority = i;
-		rwlock_release_writelock(&rw_args);
+		//rwlock_release_writelock(&rw_args);
 
-		//cannot run more than 20 threads at the same time
-		pthread_mutex_lock(&mutex);
-		while (num_active_threads >= MAX_THREADS){
-			pthread_cond_wait(&cond, &mutex);
+		int created = 0;
+		while (!created) {
+			// Try to lock without blocking
+			if (pthread_mutex_trylock(&mutex) == 0) {
+				// If successful, check if we can create a new thread
+				if (num_active_threads < MAX_THREADS) {
+					// Create thread
+					if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, &args) == 0) {
+						num_active_threads++;
+						created = 1; // Indicate that the thread was successfully created
+					}
+				}
+				pthread_mutex_unlock(&mutex); // Always unlock if we successfully locked
+
+				if (!created) {
+					sched_yield(); // Yield the processor to reduce busy waiting
+				}
+			} else {
+				// trylock failed
+				// Yield to reduce busy waiting
+				sched_yield();
+			}
 		}
-		//if num_active_threads is lower than 20, create thread
-		rwlock_acquire_readlock(&rw_args); //the lock to prevent to change the value in args before read it in the thread.
-		if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
-			exit(EXIT_FAILURE);
-		};
+		// //cannot run more than 20 threads at the same time
+		// pthread_mutex_lock(&mutex);
+		// while (num_active_threads >= MAX_THREADS){
+		// 	pthread_cond_wait(&cond, &mutex);
+		// }
+		// //if num_active_threads is lower than 20, create thread
+		// rwlock_acquire_readlock(&rw_args); //the lock to prevent to change the value in args before read it in the thread.
+		// if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
+		// 	exit(EXIT_FAILURE);
+		// };
 
-		num_active_threads++;
-		pthread_mutex_unlock(&mutex);
+		// num_active_threads++;
+		// pthread_mutex_unlock(&mutex);
 	}
 	fclose(f_out);
 
