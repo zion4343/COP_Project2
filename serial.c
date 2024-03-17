@@ -83,6 +83,10 @@ typedef struct __arg_struct{
 	char** files;
 	FILE* f_out;
 	int priority;
+
+	//to return value
+	unsigned char* buffer_out;
+	int nbytes_zipped;
 } arg_struct;
 
 /*
@@ -95,14 +99,7 @@ int cmp(const void *a, const void *b) {
 /*
 Shared Variables
 */
-DIR *d;
-struct dirent *dir;
-char **files = NULL;
-int nfiles = 0;
-
-pthread_t threads[MAX_THREADS];
 int num_active_threads = 0;
-int next_priority = 0;
 
 /*
 Locks
@@ -135,8 +132,6 @@ void *thread_createSingleZippedPackage(void* arg){
 	char** argv = args->argv;
 	char** files = args->files;
 	FILE *f_out = args->f_out;
-	int priority = args->priority;
-	rwlock_release_readlock(&rw_args);
 
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
@@ -182,19 +177,6 @@ void *thread_createSingleZippedPackage(void* arg){
 	// dump zipped file
 	int nbytes_zipped = BUFFER_SIZE-strm.avail_out;
 
-	//Execute fwrite() based on priority
-	pthread_mutex_lock(&mutex_p);
-	while(priority != next_priority){
-		pthread_cond_wait(&cond_p, &mutex_p); 
-	}
-	rwlock_acquire_writelock(&rw_file);
-	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
-	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
-	rwlock_release_writelock(&rw_file);
-	next_priority++;
-	pthread_cond_broadcast(&cond_p);
-	pthread_mutex_unlock(&mutex_p);
-
 	rwlock_acquire_writelock(&rw_total_out);
 	total_out += nbytes_zipped;
 	rwlock_release_writelock(&rw_total_out);
@@ -202,6 +184,10 @@ void *thread_createSingleZippedPackage(void* arg){
 	rwlock_acquire_writelock(&rw_malloc);
 	free(full_path);
 	rwlock_release_writelock(&rw_malloc);
+
+	//set return value for fwrite()
+	args->buffer_out = buffer_out;
+	args->nbytes_zipped = nbytes_zipped;
 
 	//Reduce the active_thread number and signal for the cond
 	pthread_mutex_lock(&mutex);
@@ -224,6 +210,10 @@ int main(int argc, char **argv) {
 	// do not modify the main function before this point!
 	assert(argc == 2);
 
+	DIR *d;
+	struct dirent *dir;
+	char **files = NULL;
+	int nfiles = 0;
 
 	d = opendir(argv[1]);
 	if(d == NULL) {
@@ -251,6 +241,9 @@ int main(int argc, char **argv) {
 	FILE *f_out = fopen("video.vzip", "w");
 	assert(f_out != NULL);
 
+	pthread_t threads[nfiles];
+	arg_struct args[nfiles];
+
 	//rw_lock
 	rwlock_init(&rw_total_in); //for total_in
 	rwlock_init(&rw_total_out); //for total_out
@@ -261,58 +254,35 @@ int main(int argc, char **argv) {
 
 	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
-		//rwlock_acquire_writelock(&rw_args);
-		arg_struct args;
-		args.i = i;
-		args.argv = argv;
-		args.files = files;
-		args.f_out = f_out;
-		args.priority = i;
-		//rwlock_release_writelock(&rw_args);
+		args[i].i = i;
+		args[i].argv = argv;
+		args[i].files = files;
+		args[i].f_out = f_out;
 
-		int created = 0;
-		while (!created) {
-			// Try to lock without blocking
-			if (pthread_mutex_trylock(&mutex) == 0) {
-				// If successful, check if we can create a new thread
-				if (num_active_threads < MAX_THREADS) {
-					// Create thread
-					if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, &args) == 0) {
-						num_active_threads++;
-						created = 1; // Indicate that the thread was successfully created
-					}
-				}
-				pthread_mutex_unlock(&mutex); // Always unlock if we successfully locked
-
-				if (!created) {
-					sched_yield(); // Yield the processor to reduce busy waiting
-				}
-			} else {
-				// trylock failed
-				// Yield to reduce busy waiting
-				sched_yield();
-			}
+		//cannot run more than 20 threads at the same time
+		pthread_mutex_lock(&mutex);
+		while (num_active_threads >= MAX_THREADS){
+			pthread_cond_wait(&cond, &mutex);
 		}
-		// //cannot run more than 20 threads at the same time
-		// pthread_mutex_lock(&mutex);
-		// while (num_active_threads >= MAX_THREADS){
-		// 	pthread_cond_wait(&cond, &mutex);
-		// }
-		// //if num_active_threads is lower than 20, create thread
-		// rwlock_acquire_readlock(&rw_args); //the lock to prevent to change the value in args before read it in the thread.
-		// if (pthread_create(&threads[num_active_threads], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
-		// 	exit(EXIT_FAILURE);
-		// };
+		//if num_active_threads is lower than 20, create thread
+		if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args[i]) != 0){
+			exit(EXIT_FAILURE);
+		};
 
-		// num_active_threads++;
-		// pthread_mutex_unlock(&mutex);
+		num_active_threads++;
+		pthread_mutex_unlock(&mutex);
 	}
-	fclose(f_out);
 
 	//wait for threads to finish
-	for (int i = 0; i < num_active_threads; i++){
+	for (int i = 0; i < nfiles; i++){
 		pthread_join(threads[i], NULL);
+		rwlock_acquire_writelock(&rw_file);
+		fwrite(&args[i].nbytes_zipped, sizeof(int), 1, f_out);
+		fwrite(args[i].buffer_out, sizeof(unsigned char), args[i].nbytes_zipped, f_out);
+		rwlock_release_writelock(&rw_file);
 	}
+
+	fclose(f_out);
 
 	printf("Compression rate: %.2lf%%\n", 100.0*(total_in-total_out)/total_in);
 
@@ -320,7 +290,6 @@ int main(int argc, char **argv) {
 	for(int i=0; i < nfiles; i++)
 		free(files[i]);
 	free(files);
-
 
 	// do not modify the main function after this point!
 
