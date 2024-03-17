@@ -100,6 +100,7 @@ int cmp(const void *a, const void *b) {
 Shared Variables
 */
 int num_active_threads = 0;
+int next_priority = 0;
 
 /*
 Locks
@@ -132,6 +133,7 @@ void *thread_createSingleZippedPackage(void* arg){
 	char** argv = args->argv;
 	char** files = args->files;
 	FILE *f_out = args->f_out;
+	int priority = args->priority;
 
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
@@ -185,9 +187,18 @@ void *thread_createSingleZippedPackage(void* arg){
 	free(full_path);
 	rwlock_release_writelock(&rw_malloc);
 
-	//set return value for fwrite()
-	args->buffer_out = buffer_out;
-	args->nbytes_zipped = nbytes_zipped;
+	//Execute fwrite() based on priority
+	pthread_mutex_lock(&mutex_p);
+	while(priority != next_priority){
+		pthread_cond_wait(&cond_p, &mutex_p); 
+	}
+	rwlock_acquire_writelock(&rw_file);
+	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
+	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
+	rwlock_release_writelock(&rw_file);
+	next_priority++;
+	pthread_cond_broadcast(&cond_p);
+	pthread_mutex_unlock(&mutex_p);
 
 	//Reduce the active_thread number and signal for the cond
 	pthread_mutex_lock(&mutex);
@@ -258,6 +269,7 @@ int main(int argc, char **argv) {
 		args[i].argv = argv;
 		args[i].files = files;
 		args[i].f_out = f_out;
+		args[i].priority = i;
 
 		//cannot run more than 20 threads at the same time
 		pthread_mutex_lock(&mutex);
@@ -276,10 +288,6 @@ int main(int argc, char **argv) {
 	//wait for threads to finish
 	for (int i = 0; i < nfiles; i++){
 		pthread_join(threads[i], NULL);
-		rwlock_acquire_writelock(&rw_file);
-		fwrite(&args[i].nbytes_zipped, sizeof(int), 1, f_out);
-		fwrite(args[i].buffer_out, sizeof(unsigned char), args[i].nbytes_zipped, f_out);
-		rwlock_release_writelock(&rw_file);
 	}
 
 	fclose(f_out);
