@@ -6,6 +6,7 @@
 #include <zlib.h>
 #include <time.h>
 #include <pthread.h>
+#include <errno.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
 #define MAX_THREADS 19 //The maximum number of child thread
@@ -29,10 +30,13 @@ void Zem_init(Zem_t *s, int value){
 }
 
 void Zem_wait(Zem_t *s){
-	pthread_mutex_lock(&s->lock);
-	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
-	s->value--;
-	pthread_mutex_unlock(&s->lock);
+	if (pthread_mutex_trylock(&s->lock) == 0){
+		while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
+		s->value--;
+		pthread_mutex_unlock(&s->lock);}
+	else{
+		EBUSY;
+	}
 }
 
 void Zem_post(Zem_t *s){
@@ -201,6 +205,7 @@ void *thread_createSingleZippedPackage(void* arg){
 	pthread_mutex_lock(&mutex);
 	num_active_threads--;
 	pthread_mutex_unlock(&mutex);
+	
 	pthread_cond_signal(&cond);
 
 	pthread_exit(NULL);
@@ -270,17 +275,20 @@ int main(int argc, char **argv) {
 		rwlock_release_writelock(&rw_args);
 
 		//cannot run more than 20 threads at the same time
-		pthread_mutex_lock(&mutex);
-		while (num_active_threads >= MAX_THREADS){
-			pthread_cond_wait(&cond, &mutex);
+		if (pthread_mutex_trylock(&mutex) == 0){
+			while (num_active_threads >= MAX_THREADS){
+				pthread_cond_wait(&cond, &mutex);
+			}
+			//if num_active_threads is lower than 20, create thread
+			rwlock_acquire_readlock(&rw_args);
+			if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
+				exit(EXIT_FAILURE);
+			};
+			num_active_threads++;
+			pthread_mutex_unlock(&mutex);}
+		else{
+			EBUSY;
 		}
-		//if num_active_threads is lower than 20, create thread
-		rwlock_acquire_readlock(&rw_args);
-		if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
-			exit(EXIT_FAILURE);
-		};
-		num_active_threads++;
-		pthread_mutex_unlock(&mutex);
 	}
 
 	//wait for threads to finish
