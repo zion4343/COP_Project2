@@ -24,8 +24,6 @@ void Zem_init(Zem_t *s, int value){
 	s->value = value;
 	int rc = pthread_cond_init(&s->cond, NULL);
 	assert (rc == 0);
-	// rc = pthread_mutex_init(&s->lock, NULL);
-	// assert (rc == 0);
 }
 
 void Zem_wait(Zem_t *s){
@@ -33,13 +31,6 @@ void Zem_wait(Zem_t *s){
 	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
 	s->value--;
 	pthread_mutex_unlock(&s->lock);
-	// if (pthread_mutex_trylock(&s->lock) == 0){
-	// 	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
-	// 	s->value--;
-	// 	pthread_mutex_unlock(&s->lock);}
-	// else{
-	// 	EBUSY;
-	// }
 }
 
 void Zem_post(Zem_t *s){
@@ -47,13 +38,6 @@ void Zem_post(Zem_t *s){
 	s->value++;
 	pthread_cond_signal(&s->cond);
 	pthread_mutex_unlock(&s->lock);
-	// if (pthread_mutex_trylock(&s->lock) == 0){
-	// 	s->value++;
-	// 	pthread_cond_signal(&s->cond);
-	// 	pthread_mutex_unlock(&s->lock);}
-	// else{
-	// 	EBUSY;
-	// }
 }
 
 //Read-Write Lock using Zemaphore
@@ -211,34 +195,10 @@ void *thread_createSingleZippedPackage(void* arg){
 	pthread_cond_broadcast(&cond_p);
 	pthread_mutex_unlock(&mutex_p);
 
-	// if (pthread_mutex_trylock(&mutex_p) == 0){
-	// 	while(priority != next_priority){
-	// 		pthread_cond_wait(&cond_p, &mutex_p); 
-	// 	}
-	// 	rwlock_acquire_writelock(&rw_file);
-	// 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
-	// 	fwrite(buffer_out, sizeof(unsigned char), nbytes_zipped, f_out);
-	// 	rwlock_release_writelock(&rw_file);
-	// 	next_priority++;
-	// 	pthread_cond_broadcast(&cond_p);
-	// 	pthread_mutex_unlock(&mutex_p);}
-	// else{
-	// 	EBUSY;
-	// }
-
-
-
 	//Reduce the active_thread number and signal for the cond
 	pthread_mutex_lock(&mutex);
 	num_active_threads--;
 	pthread_mutex_unlock(&mutex);
-	
-	// if (pthread_mutex_trylock(&mutex) == 0){
-	// 	num_active_threads--;
-	// 	pthread_mutex_unlock(&mutex);}
-	// else{
-	// 	EBUSY;
-	// }
 	
 	pthread_cond_signal(&cond);
 
@@ -309,19 +269,6 @@ int main(int argc, char **argv) {
 		rwlock_release_writelock(&rw_args);
 
 		//cannot run more than 20 threads at the same time
-		// pthread_mutex_lock(&mutex);
-		// while (num_active_threads >= MAX_THREADS){
-		// 	pthread_cond_wait(&cond, &mutex);
-		// }
-		// //if num_active_threads is lower than 20, create thread
-		// rwlock_acquire_readlock(&rw_args);
-		// if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
-		// 	exit(EXIT_FAILURE);
-		// };
-		// num_active_threads++;
-		// pthread_mutex_unlock(&mutex);
-
-
 		if (pthread_mutex_trylock(&mutex) == 0){
 			while (num_active_threads >= MAX_THREADS){
 				pthread_cond_wait(&cond, &mutex);
