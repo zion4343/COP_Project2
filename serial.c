@@ -83,10 +83,6 @@ typedef struct __arg_struct{
 	char** files;
 	FILE* f_out;
 	int priority;
-
-	//to return value
-	unsigned char* buffer_out;
-	int nbytes_zipped;
 } arg_struct;
 
 /*
@@ -134,6 +130,7 @@ void *thread_createSingleZippedPackage(void* arg){
 	char** files = args->files;
 	FILE *f_out = args->f_out;
 	int priority = args->priority;
+	rwlock_release_readlock(&rw_args);
 
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
@@ -253,7 +250,6 @@ int main(int argc, char **argv) {
 	assert(f_out != NULL);
 
 	pthread_t threads[nfiles];
-	arg_struct args[nfiles];
 
 	//rw_lock
 	rwlock_init(&rw_total_in); //for total_in
@@ -262,14 +258,16 @@ int main(int argc, char **argv) {
 	rwlock_init(&rw_file); //for f_out
 	rwlock_init(&rw_args); //for args
 
-
 	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
-		args[i].i = i;
-		args[i].argv = argv;
-		args[i].files = files;
-		args[i].f_out = f_out;
-		args[i].priority = i;
+		rwlock_acquire_writelock(&rw_args);
+		arg_struct args;
+		args.i = i;
+		args.argv = argv;
+		args.files = files;
+		args.f_out = f_out;
+		args.priority = i;
+		rwlock_release_writelock(&rw_args);
 
 		//cannot run more than 20 threads at the same time
 		pthread_mutex_lock(&mutex);
@@ -277,10 +275,10 @@ int main(int argc, char **argv) {
 			pthread_cond_wait(&cond, &mutex);
 		}
 		//if num_active_threads is lower than 20, create thread
-		if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args[i]) != 0){
+		rwlock_acquire_readlock(&rw_args);
+		if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
 			exit(EXIT_FAILURE);
 		};
-
 		num_active_threads++;
 		pthread_mutex_unlock(&mutex);
 	}
