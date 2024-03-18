@@ -5,14 +5,20 @@ import sys
 import pygame
 
 def read_next_chunk(file):
-    size_data = file.read(4)
-    if not size_data:
+    """
+    Reads the size of the next chuck from the file, and then reads the chunk data and return it
+    """
+    size_data = file.read(4)    
+    if not size_data:       
         return None
-    size = struct.unpack('<I', size_data)[0]
+    size = struct.unpack('<I', size_data)[0]    
     data = file.read(size)
     return data
 
 def parse_ppm(data):
+    """
+    Parses PPM image data
+    """
     lines = data.split(b'\n')
     width, height = map(int, lines[1].split())
     max_val = int(lines[2])
@@ -24,6 +30,9 @@ def parse_ppm(data):
 
 
 def main():
+    """
+    Main function to decompress and display images
+    """
     if not os.path.exists("reference.vzip"):
         print("Error reference.vzip")
         return

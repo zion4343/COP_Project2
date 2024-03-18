@@ -291,9 +291,9 @@ int main(int argc, char **argv) {
 			};
 			num_active_threads++;
 			pthread_mutex_unlock(&mutex);}
-		else{
-			16;
-		}
+		// else{
+		// 	16;
+		// }
 	}
 
 	//wait for threads to finish
