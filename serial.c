@@ -30,13 +30,10 @@ void Zem_init(Zem_t *s, int value){
 }
 
 void Zem_wait(Zem_t *s){
-	if (pthread_mutex_trylock(&s->lock) == 0){
-		while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
-		s->value--;
-		pthread_mutex_unlock(&s->lock);}
-	else{
-		EBUSY;
-	}
+	pthread_mutex_lock(&s->lock);
+	while(s->value <= 0){pthread_cond_wait(&s->cond, &s->lock);}
+	s->value--;
+	pthread_mutex_unlock(&s->lock);
 }
 
 void Zem_post(Zem_t *s){
