@@ -127,7 +127,7 @@ int total_in = 0, total_out = 0;
 rwlock_t rw_total_in;
 rwlock_t rw_total_out;
 //lock for malloc()
-rwlock_t rw_malloc;
+//rwlock_t rw_malloc;
 //lock for file
 rwlock_t rw_file;
 //lock for args
@@ -160,10 +160,10 @@ void *thread_createSingleZippedPackage(void* arg){
 	strcat(full_path, "/");
 	strcat(full_path, files[i]);
 
-	rwlock_acquire_writelock(&rw_malloc);
+	// rwlock_acquire_writelock(&rw_malloc);
 	unsigned char *buffer_in = malloc(BUFFER_SIZE * sizeof(unsigned char));
 	unsigned char *buffer_out = malloc(BUFFER_SIZE * sizeof(unsigned char));
-	rwlock_release_writelock(&rw_malloc);
+	// rwlock_release_writelock(&rw_malloc);
 
 	// load file
 	rwlock_acquire_readlock(&rw_file);
@@ -196,19 +196,18 @@ void *thread_createSingleZippedPackage(void* arg){
 	total_out += nbytes_zipped;
 	rwlock_release_writelock(&rw_total_out);
 
-	rwlock_acquire_writelock(&rw_malloc);
+	// rwlock_acquire_writelock(&rw_malloc);
 	free(full_path);
-	rwlock_release_writelock(&rw_malloc);
+	// rwlock_release_writelock(&rw_malloc);
 
 	//Execute fwrite() based on priority
 	//unlock before waiting and skeep for 1ms to reduce CPU usage
 	//lock again before re-checking
+	// pthread_mutex_lock(&mutex_p);
+
 	pthread_mutex_lock(&mutex_p);
 	while(priority != next_priority){
-		pthread_mutex_unlock(&mutex_p);
-		usleep(1000);
-		// pthread_cond_wait(&cond_p, &mutex_p); 
-		pthread_mutex_lock(&mutex_p);
+		pthread_cond_wait(&cond_p, &mutex_p); 
 	}
 	rwlock_acquire_writelock(&rw_file);
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
@@ -300,7 +299,7 @@ int main(int argc, char **argv) {
 	//rw_lock
 	rwlock_init(&rw_total_in); //for total_in
 	rwlock_init(&rw_total_out); //for total_out
-	rwlock_init(&rw_malloc); //for memory access (for free() and malloc())
+	//rwlock_init(&rw_malloc); //for memory access (for free() and malloc())
 	rwlock_init(&rw_file); //for f_out
 	rwlock_init(&rw_args); //for args
 
