@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
-#define MAX_THREADS 19 //The maximum number of child thread
+#define MAX_THREADS 20 //The maximum number of child thread
 
 /*
 Class
@@ -281,7 +281,7 @@ int main(int argc, char **argv) {
 			num_active_threads++;
 			pthread_mutex_unlock(&mutex);}
 		else{
-			16;
+			//16;
 		}
 	}
 
