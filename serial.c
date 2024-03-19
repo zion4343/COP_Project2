@@ -133,29 +133,18 @@ void *thread_createSingleZippedPackage(void* arg){
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
 	//allocate heap for memory
-	// rwlock_acquire_writelock(&rw_malloc);
-	// char *full_path = malloc(len*sizeof(char));
-	// rwlock_release_writelock(&rw_malloc);
-	
-	char *full_path;
 	rwlock_acquire_writelock(&rw_malloc);
-	full_path = malloc(len*sizeof(char));
+	char *full_path = malloc(len*sizeof(char));
 	rwlock_release_writelock(&rw_malloc);
-
+	
 	assert(full_path != NULL);
 	strcpy(full_path, argv[1]);
 	strcat(full_path, "/");
 	strcat(full_path, files[i]);
 
-	// rwlock_acquire_writelock(&rw_malloc);
-	// unsigned char *buffer_in = malloc(BUFFER_SIZE * sizeof(unsigned char));
-	// unsigned char *buffer_out = malloc(BUFFER_SIZE * sizeof(unsigned char));
-	// rwlock_release_writelock(&rw_malloc);
-
-	unsigned char *buffer_in, *buffer_out;
 	rwlock_acquire_writelock(&rw_malloc);
-	buffer_in = malloc(BUFFER_SIZE *sizeof(unsigned char));
-	buffer_out = malloc(BUFFER_SIZE *sizeof(unsigned char));
+	unsigned char *buffer_in = malloc(BUFFER_SIZE * sizeof(unsigned char));
+	unsigned char *buffer_out = malloc(BUFFER_SIZE * sizeof(unsigned char));
 	rwlock_release_writelock(&rw_malloc);
 
 	// load file
@@ -291,9 +280,9 @@ int main(int argc, char **argv) {
 			};
 			num_active_threads++;
 			pthread_mutex_unlock(&mutex);}
-		// else{
-		// 	16;
-		// }
+		else{
+			16;
+		}
 	}
 
 	//wait for threads to finish
