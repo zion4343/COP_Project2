@@ -1,3 +1,4 @@
+
 #include <dirent.h> 
 #include <stdio.h> 
 #include <assert.h>
@@ -8,7 +9,7 @@
 #include <pthread.h>
 
 #define BUFFER_SIZE 1048576 // 1MB
-#define MAX_THREADS 19 //The maximum number of child thread
+#define MAX_THREADS 8 //The maximum number of child thread
 
 /*
 Class
@@ -149,9 +150,10 @@ void *thread_createSingleZippedPackage(void* arg){
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
 	//allocate heap for memory
-	rwlock_acquire_writelock(&rw_malloc);
+	//allocating heap is safe in C so lock might be unnesasarry in terms of speed (not sure)
+	//rwlock_acquire_writelock(&rw_malloc);
 	char *full_path = malloc(len*sizeof(char));
-	rwlock_release_writelock(&rw_malloc);
+	//rwlock_release_writelock(&rw_malloc);
 	
 	assert(full_path != NULL);
 	strcpy(full_path, argv[1]);
@@ -199,9 +201,14 @@ void *thread_createSingleZippedPackage(void* arg){
 	rwlock_release_writelock(&rw_malloc);
 
 	//Execute fwrite() based on priority
+	//unlock before waiting and skeep for 1ms to reduce CPU usage
+	//lock again before re-checking
 	pthread_mutex_lock(&mutex_p);
 	while(priority != next_priority){
-		pthread_cond_wait(&cond_p, &mutex_p); 
+		pthread_mutex_unlock(&mutex_p);
+		usleep(1000);
+		// pthread_cond_wait(&cond_p, &mutex_p); 
+		pthread_mutex_lock(&mutex_p);
 	}
 	rwlock_acquire_writelock(&rw_file);
 	fwrite(&nbytes_zipped, sizeof(int), 1, f_out);
