@@ -1,4 +1,3 @@
-
 #include <dirent.h> 
 #include <stdio.h> 
 #include <assert.h>
@@ -23,8 +22,6 @@ typedef struct __Zem_t{
 
 void Zem_init(Zem_t *s, int value){
 	s->value = value;
-	int rc = pthread_cond_init(&s->cond, NULL);
-	assert (rc == 0);
 }
 
 void Zem_wait(Zem_t *s){
@@ -43,9 +40,9 @@ void Zem_post(Zem_t *s){
 
 //Read-Write Lock using Zemaphore
 typedef struct __rwlock_t{
-	Zem_t lock; //Basic Lock
-	Zem_t writelock; //Used to allow one writer or many readers
-	int readers; //count the readers in critical section
+	Zem_t lock;
+	Zem_t writelock; //allow one writer or many readers
+	int readers;
 }rwlock_t;
 
 void rwlock_init(rwlock_t *rw){
@@ -106,13 +103,12 @@ pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 //Lock and Cond for priority
 pthread_mutex_t mutex_p = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond_p = PTHREAD_COND_INITIALIZER;
-//rwlock for total_in and total_out
+//total bytes in and out
 int total_in = 0, total_out = 0;
 rwlock_t rw_total_in;
 rwlock_t rw_total_out;
-//lock for file
+
 rwlock_t rw_file;
-//lock for args
 rwlock_t rw_args;
 
 /*
@@ -132,7 +128,6 @@ void *thread_createSingleZippedPackage(void* arg){
 	int len = strlen(argv[1])+strlen(files[i])+2;
 
 	//allocate heap for memory
-	//allocating heap is safe in C so lock might be unnesasarry in terms of speed (not sure)
 	char *full_path = malloc(len*sizeof(char));
 	
 	assert(full_path != NULL);
@@ -169,13 +164,12 @@ void *thread_createSingleZippedPackage(void* arg){
 
 	// dump zipped file
 	int nbytes_zipped = BUFFER_SIZE-strm.avail_out;
-
 	rwlock_acquire_writelock(&rw_total_out);
 	total_out += nbytes_zipped;
 	rwlock_release_writelock(&rw_total_out);
-
 	free(full_path);
 
+	// write with priority
 	pthread_mutex_lock(&mutex_p);
 	while(priority != next_priority){
 		pthread_cond_wait(&cond_p, &mutex_p); 
@@ -194,7 +188,6 @@ void *thread_createSingleZippedPackage(void* arg){
 	pthread_mutex_unlock(&mutex);
 
 	pthread_cond_signal(&cond);
-
 	pthread_exit(NULL);
 }
 
@@ -230,7 +223,6 @@ int main(int argc, char **argv) {
 		if(dir->d_name[len-4] == '.' && dir->d_name[len-3] == 'p' && dir->d_name[len-2] == 'p' && dir->d_name[len-1] == 'm') {
 			files[nfiles] = strdup(dir->d_name);
 			assert(files[nfiles] != NULL);
-
 			nfiles++;
 		}
 	}
@@ -244,10 +236,10 @@ int main(int argc, char **argv) {
 	pthread_t threads[nfiles];
 
 	//rw_lock
-	rwlock_init(&rw_total_in); //for total_in
-	rwlock_init(&rw_total_out); //for total_out
-	rwlock_init(&rw_file); //for f_out
-	rwlock_init(&rw_args); //for args
+	rwlock_init(&rw_total_in);
+	rwlock_init(&rw_total_out);
+	rwlock_init(&rw_file);
+	rwlock_init(&rw_args);
 
 	for(int i=0; i < nfiles; i++) {
 		//Arguments for thread functions
