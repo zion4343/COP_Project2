@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
 			while (num_active_threads >= MAX_THREADS){
 				pthread_cond_wait(&cond, &mutex);
 			}
-			//if num_active_threads is lower than 20, create thread
+			//if num_active_threads is lower than MAX_THREADS, create thread
 			rwlock_acquire_readlock(&rw_args);
 			if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
 				exit(EXIT_FAILURE);
