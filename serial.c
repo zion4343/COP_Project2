@@ -270,9 +270,7 @@ int main(int argc, char **argv) {
 				exit(EXIT_FAILURE);
 			};
 			num_active_threads++;
-			pthread_mutex_unlock(&mutex);}
-		else{
-			;
+			pthread_mutex_unlock(&mutex);
 		}
 	}
 
