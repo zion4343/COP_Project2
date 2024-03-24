@@ -103,6 +103,7 @@ pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 //Lock and Cond for priority
 pthread_mutex_t mutex_p = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond_p = PTHREAD_COND_INITIALIZER;
+
 //total bytes in and out
 int total_in = 0, total_out = 0;
 rwlock_t rw_total_in;
@@ -252,18 +253,17 @@ int main(int argc, char **argv) {
 		args.priority = i;
 		rwlock_release_writelock(&rw_args);
 
-		if (pthread_mutex_trylock(&mutex) == 0){
-			while (num_active_threads >= MAX_THREADS){
-				pthread_cond_wait(&cond, &mutex);
-			}
-			//if num_active_threads is lower than MAX_THREADS, create thread
-			rwlock_acquire_readlock(&rw_args);
-			if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
-				exit(EXIT_FAILURE);
-			};
-			num_active_threads++;
-			pthread_mutex_unlock(&mutex);
+		pthread_mutex_lock(&mutex);
+		while (num_active_threads >= MAX_THREADS){
+			pthread_cond_wait(&cond, &mutex);
 		}
+		//if num_active_threads is lower than MAX_THREADS, create thread
+		rwlock_acquire_readlock(&rw_args);
+		if (pthread_create(&threads[i], NULL, thread_createSingleZippedPackage, (void*)&args) != 0){
+			exit(EXIT_FAILURE);
+		};
+		num_active_threads++;
+		pthread_mutex_unlock(&mutex);
 	}
 
 	//wait for threads to finish
@@ -276,8 +276,9 @@ int main(int argc, char **argv) {
 	printf("Compression rate: %.2lf%%\n", 100.0*(total_in-total_out)/total_in);
 
 	// release list of files
-	for(int i=0; i < nfiles; i++)
+	for(int i=0; i < nfiles; i++){
 		free(files[i]);
+	}
 	free(files);
 
 	// do not modify the main function after this point!
