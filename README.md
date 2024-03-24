@@ -14,7 +14,7 @@ This visualizer is designed to play videos of .vzip format. It decompresses the 
 4. Ensure you have zlib installed. You can download it from https://zlib.net/.
 
 ## Build and Run
-1. Place .vzip file and `visualizer.py` in the same directory.
+1. Place [reference].vzip file and `visualizer.py` in the same directory.
 2. Open the terminal in said directory and run the visualizer script: python3 visualizer.py.
 3. The video will start displaying frame after frame in lexicographical order. After the last frame, the visualizer will exit.
 
