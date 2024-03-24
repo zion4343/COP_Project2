@@ -34,11 +34,10 @@ def main():
             pixels = pixels.rstrip()
             size = (width, height)
             
+            #display in Pygame
             actual_image = pygame.image.frombuffer(pixels, size, 'RGB')
             if not actual_image:
-                raise PygameImageError("Failed to craft image from pixels")
-                
-            #display in Pygame
+                raise PygameImageError("Failed to craft image from pixels")       
             screen = pygame.display.set_mode(size)
             screen.blit(actual_image, (0, 0))
             pygame.display.flip()
